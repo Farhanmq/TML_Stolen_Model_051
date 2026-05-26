@@ -1,0 +1,108 @@
+\documentclass{article} % For LaTeX2e
+\usepackage{iclr2025_conference,times}
+\input{math_commands.tex}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+
+\title{Stolen Model Detection via Query-Based Fingerprinting\\and Suspect-Graph Propagation}
+
+\author{
+Farhan Mahmood Qureshi\\
+Matriculation Number: 7075067\\
+\texttt{s8faqure@stud.uni-saarland.de}
+\And
+Rimsha Abid\\
+Matriculation Number: 7075879\\
+\texttt{s8riabid@stud.uni-saarland.de}\\
+\\
+\textit{CMS Team ID: team051}\\
+\\
+Trustworthy Machine Learning 2026\\
+CISPA Helmholtz Center for Information Security\\
+Saarland University
+}
+
+\newcommand{\fix}{\marginpar{FIX}}
+\newcommand{\new}{\marginpar{NEW}}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+
+Model stealing refers to the practice of obtaining a functional copy of a machine learning model without authorisation, typically by querying the model and using its outputs to train or fine-tune a surrogate. In this task, we are given a target CIFAR-100 classifier (a ResNet-18 trained from scratch) and 360 suspect models with the same architecture. Our goal is to assign each suspect a continuous confidence score reflecting how likely it is to be a stolen derivative of the target — whether a direct copy, a fine-tuned version, a checkpoint descendant, or a distilled replica. Performance is evaluated using TPR@5\%FPR on a held-out binary label set, meaning we must rank the truly stolen models as high as possible while keeping false positives below 5\% of the 360 suspects (i.e., at most 18 false positives allowed).
+
+\section{Approach}
+
+Our final method combines two components: a query-based fingerprinting signal (QuRD) and a graph-based score propagation step over the suspect population.
+
+\subsection{QuRD: Query-Based Fingerprinting}
+
+QuRD \citep{bourtoule2024queries} uses \emph{negative probes} — inputs that the target model misclassifies — as a maximally discriminative query set. Stolen models share the target's decision boundary and therefore tend to make the same mistakes on these inputs, while independently trained models do not. We build a probe set of 3000 images (2000 from the target training set and 1000 from the CIFAR-100 test set), then filter for samples the target misclassifies, keeping up to 500. Three sub-signals are computed for each suspect on these negative probes:
+
+\begin{itemize}
+    \item \textbf{AKH} (Anna Karenina Heuristic): fraction of negative-probe predictions that exactly match the target's predictions. For an exact copy this is 1.0; for an independent model it is low.
+    \item \textbf{AKH-Logit}: Pearson correlation between flattened logit vectors on the negative probes. This is a soft version of AKH that captures graded agreement beyond hard labels.
+    \item \textbf{Negative-SAC}: Pearson correlation between pairwise cosine-similarity matrices computed from the logits on negative probes. This captures structural similarity of the output space around the target's decision boundary.
+\end{itemize}
+
+The composite QuRD score is:
+\[
+s_{\text{QuRD}} = 0.50 \cdot s_{\text{AKH}} + 0.30 \cdot s_{\text{AKH-Logit}} + 0.20 \cdot s_{\text{Neg-SAC}}
+\]
+
+The weights reflect that hard-label agreement (AKH) is the most discriminative signal, with the soft signals providing complementary information.
+
+\subsection{Suspect-Graph Propagation}
+
+A single stolen model may be the source of further stolen descendants that have drifted far enough from the target that direct similarity signals are weak. To recover these, we construct a $360 \times 360$ suspect-to-suspect similarity matrix and propagate scores through it. For each suspect pair $(i, j)$ we compute prediction agreement (fraction of 1000 probe images where $\arg\max$ logits agree) and mean per-probe cosine similarity of logit vectors, combining them as:
+\[
+\text{sim}_{ij} = 0.60 \cdot \text{pred\_agree}_{ij} + 0.40 \cdot \text{logit\_cosine}_{ij}
+\]
+
+We then build a row-normalised $k$-nearest-neighbour adjacency matrix $K$ and iterate:
+\[
+s^{(t+1)} = \alpha \cdot s_{\text{base}} + (1 - \alpha) \cdot K \, s^{(t)}
+\]
+
+where $s_{\text{base}}$ is the rank-normalised QuRD score. This spreads confidence from high-scoring suspects to their close neighbours. After hyperparameter search we use $k{=}8$, $\alpha{=}0.55$, and 20 iterations (configuration G4), which allows multi-hop propagation through stolen model lineage trees while the moderate $\alpha$ prevents over-smoothing.
+
+\subsection{Other Methods Explored}
+
+We implemented and evaluated several additional signals, none of which improved over G4 when combined. CKA (hidden activation similarity), SAC (output correlation), DDV/ModelDiff (decision-boundary distance vectors), Dataset Inference (margin-based t-test), and BatchNorm fingerprinting were all highly correlated with QuRD ($\rho > 0.90$) and added no new information. Biased-crop fingerprinting exploited the target's training augmentation recipe but was also correlated with G4 ($\rho = 0.83$). ACFM (anchor-contrastive active probing) showed a correlation of $\rho = 0.95$ with G4 due to a circular dependency in anchor selection. RIBF (weight interpolation barrier) produced a KL range of only $\pm 0.09$ across all 360 suspects, indicating that CIFAR-100 ResNet-18 models from the same distribution all occupy similar weight-space basins regardless of lineage.
+
+\subsection{Results}
+
+\begin{table}[h]
+\caption{Public leaderboard results (TPR@5\%FPR)}
+\label{results-table}
+\begin{center}
+\begin{tabular}{lc}
+\toprule
+\textbf{Method} & \textbf{TPR@5\%FPR} \\
+\midrule
+QuRD (base signal only)              & 0.62 \\
+Graph propagation G2 ($\alpha{=}0.65$, 10 iter) & 0.65 \\
+Graph propagation G4 ($\alpha{=}0.55$, 20 iter) & \textbf{0.68} \\
+Biased-crop fingerprint              & no improvement \\
+ACFM (anchor-contrastive probing)    & no improvement \\
+RIBF (weight interpolation barrier)  & no improvement \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{table}
+
+The key improvement from G2 to G4 came from increasing iterations from 10 to 20 with a slightly reduced $\alpha$. More iterations enable multi-hop propagation — a second-generation stolen model that is close to a first-generation stolen model (but not to the target directly) can receive a boosted score. The reduced $\alpha$ counteracts over-smoothing over many iterations.
+
+\section{Conclusion}
+
+Our system achieves TPR@5\%FPR = 0.68 on the public leaderboard, detecting the majority of stolen models while maintaining a low false positive rate. The most effective signals were those that exploit the decision boundary directly (QuRD) combined with population-level lineage structure (graph propagation).
+
+The practical implications of undetected model stealing are significant. A stolen model retains the intellectual property, training data memorisation, and safety properties (or lack thereof) of the original — yet the thief bears none of the training cost. In safety-critical domains such as medical diagnosis or autonomous driving, a stolen model may be deployed without the safety evaluations or regulatory approvals that were applied to the original, creating liability risks for the victim and real-world harm. In commercial settings, model stealing enables competitors to replicate expensive proprietary systems at negligible cost, undermining incentives for investment in machine learning research. Furthermore, stolen models may be fine-tuned to remove safety guardrails that the original developer carefully enforced. Detection methods like the one developed here are therefore a necessary component of responsible AI deployment: they provide model owners with the ability to audit the model ecosystem, enforce licensing agreements, and identify misuse before harm occurs.
+
+\bibliography{iclr2025_conference}
+\bibliographystyle{iclr2025_conference}
+
+\end{document}

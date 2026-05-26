@@ -1,0 +1,5 @@
+*.csv text eol=lf
+*.md text eol=lf
+*.py text eol=lf
+*.sub text eol=lf
+*.tex text eol=lf

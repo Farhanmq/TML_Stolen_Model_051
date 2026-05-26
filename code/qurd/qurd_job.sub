@@ -1,0 +1,30 @@
+# HTCondor job: QuRD scoring — 6 GPU shards
+# Submit with: condor_submit code/qurd/qurd_job.sub
+# After all 6 shards complete, run merge_qurd.sub
+
+universe     = docker
+docker_image = pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel
+
+executable   = /opt/conda/bin/python
+arguments    = code/qurd/run_qurd.py \
+  --shard-index  $(ProcId) \
+  --num-shards   6 \
+  --num-train    2000 \
+  --num-test     1000 \
+  --max-neg      500 \
+  --batch-size   128 \
+  --device       cuda
+
+output  = runlogs/qurd.$(ClusterId).$(ProcId).out
+error   = runlogs/qurd.$(ClusterId).$(ProcId).err
+log     = runlogs/qurd.$(ClusterId).log
+
+should_transfer_files = YES
+request_GPUs   = 1
+request_CPUs   = 2
+request_memory = 16G
+requirements   = UidDomain == "cs.uni-saarland.de"
++WantGPUHomeMounted = true
++WantScratchMounted = true
+
+queue 6

@@ -1,0 +1,24 @@
+# HTCondor job: graph propagation — CPU only, produces final submission.csv
+# Submit AFTER compute_pairwise.sub and merge_qurd.sub both complete.
+# Submit with: condor_submit code/graph_propagate.sub
+# Output: outputs/submission_G4.csv  (copy to outputs/submission.csv for leaderboard)
+
+universe     = docker
+docker_image = pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel
+
+executable   = /opt/conda/bin/python
+arguments    = code/graph_propagate.py
+
+output  = runlogs/graph_propagate.$(ClusterId).out
+error   = runlogs/graph_propagate.$(ClusterId).err
+log     = runlogs/graph_propagate.$(ClusterId).log
+
+should_transfer_files = YES
+request_GPUs   = 0
+request_CPUs   = 2
+request_memory = 8G
+requirements   = UidDomain == "cs.uni-saarland.de"
++WantGPUHomeMounted = true
++WantScratchMounted = true
+
+queue 1
