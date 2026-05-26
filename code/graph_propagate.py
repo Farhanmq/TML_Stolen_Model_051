@@ -5,21 +5,18 @@ Uses the 360×360 pairwise similarity matrix from compute_pairwise.py and
 any base score CSV to propagate target-similarity through the suspect graph.
 
 This recovers second-generation stolen models that are not directly close to
-the target but are close to other high-confidence suspects (lineage_aware.md §4).
+the target but are close to other high-confidence suspects.
 
 Propagation formula:
     score_new = alpha * base + (1 - alpha) * K @ score_old
 
 where K is the row-normalised top-k neighbour adjacency matrix.
 
-Outputs one submission.csv per experiment (G1–G4):
-  outputs/submission_G1.csv  k=5,  alpha=0.75, iter=10
-  outputs/submission_G2.csv  k=8,  alpha=0.65, iter=10   ← best first guess
-  outputs/submission_G3.csv  k=12, alpha=0.65, iter=10
-  outputs/submission_G4.csv  k=8,  alpha=0.55, iter=20
+Best leaderboard configuration:
+  outputs/submission.csv  k=8, alpha=0.55, iter=20
 
 Usage:
-    python3 graph_propagate.py --base-csv /path/to/best_base_score.csv
+    python3 code/graph_propagate.py --base-csv outputs/qurd/submission.csv
 """
 from __future__ import annotations
 
@@ -36,12 +33,9 @@ OUTPUT_DIR   = ROOT / "outputs"
 # Default base score: QuRD merged output
 DEFAULT_BASE = ROOT / "outputs" / "qurd" / "submission.csv"
 
-EXPERIMENTS = [
-    {"name": "G1", "k": 5,  "alpha": 0.75, "num_iter": 10},
-    {"name": "G2", "k": 8,  "alpha": 0.65, "num_iter": 10},
-    {"name": "G3", "k": 12, "alpha": 0.65, "num_iter": 10},
-    {"name": "G4", "k": 8,  "alpha": 0.55, "num_iter": 20},
-]
+BEST_K = 8
+BEST_ALPHA = 0.55
+BEST_NUM_ITER = 20
 
 
 def parse_args() -> argparse.Namespace:
@@ -52,6 +46,7 @@ def parse_args() -> argparse.Namespace:
                    default=PAIRWISE_DIR / "pairwise_sim.npy",
                    help="360x360 suspect-suspect similarity matrix")
     p.add_argument("--output-dir",   type=Path, default=OUTPUT_DIR)
+    p.add_argument("--output-csv",   type=Path, default=OUTPUT_DIR / "submission.csv")
     p.add_argument("--n-suspects",   type=int,  default=360)
     return p.parse_args()
 
@@ -141,33 +136,24 @@ def main() -> None:
         f"Expected ({args.n_suspects},{args.n_suspects}), got {sim.shape}"
     print(f"  sim range: [{sim.min():.4f}, {sim.max():.4f}]", flush=True)
 
-    for exp in EXPERIMENTS:
-        name, k, alpha, num_iter = exp["name"], exp["k"], exp["alpha"], exp["num_iter"]
-        print(f"Running {name}: k={k}, alpha={alpha}, iter={num_iter} …", flush=True)
-
-        propagated = graph_propagate(base, sim, k=k, alpha=alpha, num_iter=num_iter)
-        out_path   = args.output_dir / f"submission_{name}.csv"
-        write_submission(out_path, propagated)
-
-        print(f"  → score range [{propagated.min():.4f}, {propagated.max():.4f}]  "
-              f"saved to {out_path.name}", flush=True)
-
-    # Also write a diagnostics CSV with all experiment scores side by side
-    diag_path = args.output_dir / "graph_diagnostics.csv"
-    with diag_path.open("w", newline="") as f:
-        fieldnames = ["id", "base_score"] + [f"score_{e['name']}" for e in EXPERIMENTS]
-        w = csv.DictWriter(f, fieldnames=fieldnames)
-        w.writeheader()
-        results = {e["name"]: graph_propagate(base, sim,
-                                               k=e["k"], alpha=e["alpha"],
-                                               num_iter=e["num_iter"])
-                   for e in EXPERIMENTS}
-        for i in range(args.n_suspects):
-            row = {"id": i, "base_score": f"{base[i]:.8f}"}
-            for name, scores in results.items():
-                row[f"score_{name}"] = f"{scores[i]:.8f}"
-            w.writerow(row)
-    print(f"\nDiagnostics written to {diag_path}", flush=True)
+    print(
+        f"Running best configuration: k={BEST_K}, "
+        f"alpha={BEST_ALPHA}, iter={BEST_NUM_ITER} …",
+        flush=True,
+    )
+    propagated = graph_propagate(
+        base,
+        sim,
+        k=BEST_K,
+        alpha=BEST_ALPHA,
+        num_iter=BEST_NUM_ITER,
+    )
+    write_submission(args.output_csv, propagated)
+    print(
+        f"  → score range [{propagated.min():.4f}, {propagated.max():.4f}] "
+        f"saved to {args.output_csv}",
+        flush=True,
+    )
     print("Done.", flush=True)
 
 

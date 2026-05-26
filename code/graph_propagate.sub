@@ -1,7 +1,7 @@
 # HTCondor job: graph propagation — CPU only, produces final submission.csv
 # Submit AFTER compute_pairwise.sub and merge_qurd.sub both complete.
 # Submit with: condor_submit code/graph_propagate.sub
-# Output: outputs/submission_G4.csv  (copy to outputs/submission.csv for leaderboard)
+# Output: outputs/submission.csv
 
 universe     = docker
 docker_image = pytorch/pytorch:2.3.1-cuda12.1-cudnn8-devel

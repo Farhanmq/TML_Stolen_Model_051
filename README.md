@@ -1,4 +1,4 @@
-# Stolen Model Detection — Reproducing Best Result (TPR@5%FPR = 0.68)
+# Stolen Model Detection — Reproducing Best Leaderboard Result
 
 ## Requirements
 
@@ -34,7 +34,7 @@ Wait for all 6 shards to finish, then merge:
 condor_submit code/qurd/merge_qurd.sub
 ```
 
-Output: `outputs/qurd/submission.csv`
+Output: `outputs/qurd/submission.csv` used internally as the base score for graph propagation.
 
 ### Step 2 — Pairwise logit extraction (GPU, ~20 min)
 
@@ -48,7 +48,7 @@ Wait for all 6 shards, then compute the similarity matrix:
 condor_submit code/lineage_pairwise/compute_pairwise.sub
 ```
 
-Output: `outputs/pairwise/pairwise_sim.npy`
+Output: `outputs/pairwise/pairwise_sim.npy` used internally as the suspect-suspect similarity matrix.
 
 ### Step 3 — Graph propagation (CPU, < 1 min)
 
@@ -56,12 +56,12 @@ Output: `outputs/pairwise/pairwise_sim.npy`
 condor_submit code/graph_propagate.sub
 ```
 
-Output: `outputs/submission_G4.csv` — this is the final submission file.
+Output: `outputs/submission.csv` — this is the final submission file.
 
 ## Submission
 
 ```
-outputs/submission_G4.csv
+outputs/submission.csv
 ```
 
 360 rows, columns `id` (0–359) and `score` (float in [0,1]). Higher score = more likely stolen.
